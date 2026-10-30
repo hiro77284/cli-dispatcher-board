@@ -46,16 +46,28 @@
       </div>
       <div id="validation"></div>
       <div class="action-row">
-        <button id="run" class="primary" title="Ctrl+Enter">▶ 実行</button>
-        <button id="stop" class="danger" disabled>■ 停止</button>
-        <span id="status" class="status"></span>
-        <span class="spacer"></span>
-        <button id="clear" class="ghost">出力を消去</button>
+        <button id="run" class="primary" title="新しいタブで実行（Ctrl+Enter）">▶ 実行</button>
+        <span class="hint">実行するたびに新しいタブが開き、同時にいくつでも動かせます</span>
       </div>
     </section>
 
     <div id="splitter" title="ドラッグで高さを変更"></div>
-    <section id="term-wrap"><div id="terminal"></div></section>
+    <section id="term-area">
+      <div class="tabbar">
+        <div id="tabs"></div>
+        <button id="close-done" class="ghost small" title="実行中でないタブをまとめて閉じる">終了したタブを閉じる</button>
+      </div>
+      <div class="tab-tools">
+        <span id="status" class="status"></span>
+        <span class="spacer"></span>
+        <button id="stop" class="danger small" disabled title="Ctrl+C を送る。もう一度押すと強制終了">■ 停止</button>
+        <button id="rerun" class="ghost small" disabled title="このタブで同じ値のまま実行し直す">↻ 再実行</button>
+        <button id="clear" class="ghost small" disabled>出力を消去</button>
+      </div>
+      <div id="term-wrap">
+        <div id="term-empty" class="empty">ここに実行結果が表示されます。実行中は出力欄に直接キー入力できます（y/n の確認など）。<br />タブの切り替えは Ctrl+Tab、閉じるのは × か中クリックです。</div>
+      </div>
+    </section>
   </main>
 
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>

@@ -180,5 +180,44 @@ h1 { font-size: 20px; margin: 2px 0 6px; }
 #splitter { cursor: row-resize; background: var(--line); opacity: 0.6; }
 #splitter:hover { opacity: 1; background: var(--accent); }
 
-#term-wrap { background: #16171a; padding: 8px 4px 4px 12px; min-height: 0; overflow: hidden; }
-#terminal { height: 100%; }
+button.small { font-size: 12.5px; padding: 4px 10px; }
+.hint { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+#term-area { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; background: #16171a; }
+.tabbar { display: flex; align-items: flex-end; gap: 8px; background: var(--panel); border-bottom: 1px solid var(--line); padding: 6px 10px 0; }
+#tabs { flex: 1; display: flex; gap: 2px; overflow-x: auto; overflow-y: hidden; min-width: 0; scrollbar-width: none; padding-bottom: 1px; margin-bottom: -1px; }
+.tabbar #close-done { margin-bottom: 5px; flex-shrink: 0; }
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12.5px;
+  flex-shrink: 0;
+  user-select: none;
+}
+.tab:hover { background: var(--panel-2); color: var(--text); }
+.tab.active { background: #16171a; border-color: var(--line); color: var(--text); margin-bottom: -1px; padding-bottom: 7px; }
+.tab-no { color: var(--muted); font-size: 11px; }
+.tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-icon { font-size: 11px; width: 12px; text-align: center; }
+.tab.running .tab-icon { color: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+.tab.ok .tab-icon { color: var(--ok); }
+.tab.ng .tab-icon { color: var(--ng); }
+@keyframes pulse { 50% { opacity: 0.25; } }
+.tab-close { background: transparent; border: none; padding: 0 4px; line-height: 1; font-size: 15px; color: var(--muted); border-radius: 4px; }
+.tab-close:hover:not(:disabled) { background: #3a3c42; color: var(--text); }
+.tab-tools { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid #24262b; }
+.tab-tools .status { margin-left: 0; }
+#term-wrap { position: relative; padding: 8px 4px 4px 12px; min-height: 0; overflow: hidden; }
+.term-pane { display: none; height: 100%; }
+.term-pane.active { display: block; }
+#term-empty { padding: 30px 20px; line-height: 1.8; }
+
+.badge { margin-left: 6px; font-size: 10.5px; color: #1e1f22; background: var(--warn); border-radius: 8px; padding: 0 6px; font-weight: 600; vertical-align: 1px; }

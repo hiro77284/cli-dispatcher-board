@@ -30,12 +30,12 @@ const ui = {
   edited: {}, // コマンドごとの入力中の値
   selectedId: null,
   filtered: [],
-  run: null, // { runId, startedAt, timer }
   lastPreviewOk: false,
 };
 
-// ---------------- ターミナル ----------------
-const term = new Terminal({
+// ---------------- 出力タブ ----------------
+// 実行ごとにタブを 1 つ作り、それぞれが自分の xterm を持つ。runId → タブ は byRun で引く。
+const TERM_OPTS = {
   fontFamily: '"Cascadia Mono", Consolas, "BIZ UDGothic", "MS Gothic", monospace',
   fontSize: 13,
   lineHeight: 1.15,
@@ -48,53 +48,212 @@ const term = new Terminal({
     cursor: '#d7dae0',
     selectionBackground: '#3a4a6b',
   },
-});
-const fit = new FitAddon.FitAddon();
-term.loadAddon(fit);
-term.open($('#terminal'));
-term.writeln('\x1b[90mここに実行結果が表示されます。実行中はこの画面に直接キー入力できます（y/n の確認など）。\x1b[0m');
+};
+const tabs = [];
+const byRun = new Map();
+let activeTab = null;
+let tabSeq = 0;
+const runNo = {}; // コマンドごとの通し番号（同じコマンドのタブを見分ける）
 
-term.attachCustomKeyEventHandler((e) => {
-  if (e.type !== 'keydown') return true;
-  // 選択中の Ctrl+C はコピー（選択がなければ Ctrl+C を送ってプロセスに割り込む）
-  if (e.ctrlKey && e.key.toLowerCase() === 'c' && term.hasSelection()) {
-    board.copy(term.getSelection());
-    term.clearSelection();
-    return false;
-  }
-  if (e.ctrlKey && e.key === 'Enter') return false;
-  return true;
-});
-term.onData((d) => {
-  if (ui.run) board.input(ui.run.runId, d);
-});
+const isRunning = (tab) => tab && tab.runId !== null;
+const elapsed = (ms) => {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
-const refit = () => {
+function tabNo(cmdId) {
+  runNo[cmdId] = (runNo[cmdId] || 0) + 1;
+  return runNo[cmdId] > 1 ? el('span', { class: 'tab-no', text: `#${runNo[cmdId]}` }) : null;
+}
+
+function createTab(cmd, values) {
+  const pane = el('div', { class: 'term-pane' });
+  $('#term-wrap').append(pane);
+  const term = new Terminal(TERM_OPTS);
+  const fit = new FitAddon.FitAddon();
+  term.loadAddon(fit);
+  term.open(pane);
+  const tab = {
+    key: ++tabSeq,
+    cmdId: cmd.id,
+    name: cmd.name,
+    values: { ...values },
+    runId: null,
+    state: 'idle', // idle / running / ok / ng
+    startedAt: 0,
+    info: null,
+    note: '',
+    term,
+    fit,
+    pane,
+  };
+  term.attachCustomKeyEventHandler((e) => {
+    if (e.type !== 'keydown') return true;
+    // 選択中の Ctrl+C はコピー（選択がなければ Ctrl+C を送ってプロセスに割り込む）
+    if (e.ctrlKey && e.key.toLowerCase() === 'c' && term.hasSelection()) {
+      board.copy(term.getSelection());
+      term.clearSelection();
+      return false;
+    }
+    if (e.ctrlKey && (e.key === 'Enter' || e.key === 'Tab')) return false;
+    return true;
+  });
+  term.onData((d) => {
+    if (isRunning(tab)) board.input(tab.runId, d);
+  });
+  tab.tabEl = el(
+    'div',
+    {
+      class: 'tab',
+      title: cmd.name,
+      onclick: () => activateTab(tab),
+      onauxclick: (e) => e.button === 1 && closeTab(tab),
+    },
+    el('span', { class: 'tab-icon' }),
+    el('span', { class: 'tab-name', text: cmd.name }),
+    tabNo(cmd.id),
+    el('button', {
+      class: 'tab-close',
+      title: '閉じる（中クリックでも閉じます）',
+      text: '×',
+      onclick: (e) => {
+        e.stopPropagation();
+        closeTab(tab);
+      },
+    })
+  );
+  $('#tabs').append(tab.tabEl);
+  tabs.push(tab);
+  return tab;
+}
+
+function renderTab(tab) {
+  tab.tabEl.className = `tab ${tab.state}${tab === activeTab ? ' active' : ''}`;
+  const icon = { idle: '', running: '●', ok: '✔', ng: '✖' }[tab.state];
+  tab.tabEl.querySelector('.tab-icon').textContent = icon;
+}
+
+function refitActive() {
+  const tab = activeTab;
+  if (!tab) return;
   try {
-    fit.fit();
-    board.resize(term.cols, term.rows);
+    tab.fit.fit();
+    if (isRunning(tab)) board.resize(tab.runId, tab.term.cols, tab.term.rows);
   } catch {
     /* 非表示のときは失敗する */
   }
-};
-new ResizeObserver(debounce(refit, 50)).observe($('#term-wrap'));
+}
+new ResizeObserver(debounce(refitActive, 50)).observe($('#term-wrap'));
+
+function activateTab(tab, focus = true) {
+  activeTab = tab;
+  for (const t of tabs) {
+    t.pane.classList.toggle('active', t === tab);
+    renderTab(t);
+  }
+  $('#term-empty').hidden = tabs.length > 0;
+  if (tab) {
+    refitActive();
+    if (focus) tab.term.focus();
+    tab.tabEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  renderStatus();
+  updateRunButtons();
+}
+
+function removeTab(tab) {
+  const i = tabs.indexOf(tab);
+  if (i < 0) return;
+  if (tab.runId !== null) byRun.delete(tab.runId);
+  tab.term.dispose();
+  tab.pane.remove();
+  tab.tabEl.remove();
+  tabs.splice(i, 1);
+  if (activeTab === tab) activateTab(tabs[i] || tabs[i - 1] || null, false);
+  else activateTab(activeTab, false);
+  renderList();
+}
+
+async function closeTab(tab) {
+  if (isRunning(tab)) {
+    const ok = await board.confirm('このタブのコマンドは実行中です。止めて閉じますか？', tab.name, '止めて閉じる');
+    if (!ok) return;
+    if (isRunning(tab)) board.stop(tab.runId, true);
+  }
+  removeTab(tab);
+}
+
+function closeFinishedTabs() {
+  for (const t of [...tabs]) if (!isRunning(t)) removeTab(t);
+}
+
+function cycleTab(delta) {
+  if (tabs.length < 2) return;
+  const i = tabs.indexOf(activeTab);
+  activateTab(tabs[(i + delta + tabs.length) % tabs.length]);
+}
+
+// タブでコマンドを実行する（新しいタブでも、終わったタブの再実行でも使う）
+async function startInTab(tab, cmd, values) {
+  refitActive();
+  const r = await board.start(cmd.id, values, tab.term.cols, tab.term.rows);
+  if (r.cancelled) return r;
+  tab.values = { ...values };
+  if (r.error) {
+    tab.term.write(`\r\n\x1b[31m✖ ${r.error.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n`);
+    tab.state = 'ng';
+    tab.info = null;
+    tab.note = '実行できませんでした';
+    renderTab(tab);
+    if (tab === activeTab) renderStatus();
+    return r;
+  }
+  const time = new Date(r.startedAt).toLocaleTimeString('ja-JP');
+  tab.term.write(`\x1b[36m━━ ${time}  ${cmd.name}\x1b[0m\r\n\x1b[90m> ${r.display}\r\n  （作業フォルダ: ${r.cwd}）\x1b[0m\r\n`);
+  tab.runId = r.runId;
+  tab.startedAt = r.startedAt;
+  tab.state = 'running';
+  tab.note = '';
+  tab.info = null;
+  byRun.set(r.runId, tab);
+  renderTab(tab);
+  renderList();
+  if (tab === activeTab) {
+    renderStatus();
+    updateRunButtons();
+  }
+  return r;
+}
 
 board.onData((runId, data) => {
-  if (ui.run && ui.run.runId === runId) term.write(data);
+  byRun.get(runId)?.term.write(data);
 });
 
 board.onExit((runId, info) => {
-  if (!ui.run || ui.run.runId !== runId) return;
-  clearInterval(ui.run.timer);
-  ui.run = null;
+  const tab = byRun.get(runId);
+  byRun.delete(runId);
+  if (!tab) return;
+  tab.runId = null;
+  tab.info = info;
+  tab.note = '';
+  const ok = info.exitCode === 0 && !info.signal;
+  tab.state = ok ? 'ok' : 'ng';
   const sec = (info.durationMs / 1000).toFixed(1);
-  const ok = info.exitCode === 0;
-  term.write(
-    `\r\n\x1b[${ok ? '32' : '31'}m${ok ? '✔' : '✖'} 終了コード ${info.exitCode}${info.signal ? `（シグナル ${info.signal}）` : ''}  ${sec} 秒\x1b[0m\r\n`
+  tab.term.write(
+    `\r\n\x1b[${ok ? '32' : '31'}m${ok ? '✔' : '✖'} 終了コード ${info.exitCode}${info.signal ? `（シグナル ${info.signal}）` : ''}  ${sec} 秒\x1b[0m\r\n\r\n`
   );
-  setStatus(`終了コード ${info.exitCode}（${sec} 秒）`, ok ? 'ok' : 'ng');
-  updateRunButtons();
+  renderTab(tab);
+  renderList();
+  if (tab === activeTab) {
+    renderStatus();
+    updateRunButtons();
+  }
 });
+
+// 実行中タブの経過時間を更新する
+setInterval(() => {
+  if (isRunning(activeTab)) renderStatus();
+}, 500);
 
 // ---------------- 一覧 ----------------
 function matches(c, q) {
@@ -105,6 +264,11 @@ function matches(c, q) {
     .split(/\s+/)
     .filter(Boolean)
     .every((w) => hay.includes(w));
+}
+
+function runningBadge(cmdId) {
+  const n = tabs.filter((t) => t.cmdId === cmdId && isRunning(t)).length;
+  return n ? el('span', { class: 'badge', title: '実行中', text: n > 1 ? `実行中 ${n}` : '実行中' }) : null;
 }
 
 function renderList() {
@@ -132,7 +296,7 @@ function renderList() {
             title: c.description || c.name,
             onclick: () => selectCommand(c.id),
           },
-          el('span', { class: 'item-name', text: c.name }),
+          el('span', { class: 'item-name' }, c.name, runningBadge(c.id)),
           el('span', { class: 'item-prog', text: c.program })
         )
       );
@@ -321,9 +485,12 @@ async function updatePreview() {
 }
 
 function updateRunButtons() {
-  $('#run').disabled = !!ui.run || !ui.lastPreviewOk;
-  $('#stop').disabled = !ui.run;
-  $('#sidebar').classList.toggle('busy', !!ui.run);
+  const tab = activeTab;
+  $('#run').disabled = !ui.lastPreviewOk;
+  $('#stop').disabled = !isRunning(tab);
+  $('#rerun').disabled = !tab || isRunning(tab) || !ui.commands.some((c) => c.id === tab.cmdId);
+  $('#clear').disabled = !tab;
+  $('#close-done').disabled = !tabs.some((t) => !isRunning(t));
 }
 
 function setStatus(text, kind = '') {
@@ -332,40 +499,53 @@ function setStatus(text, kind = '') {
   s.className = `status ${kind}`;
 }
 
+// 状態欄には、選んでいるタブの状態を出す
+function renderStatus() {
+  const tab = activeTab;
+  const running = tabs.filter(isRunning).length;
+  const others = running - (isRunning(tab) ? 1 : 0);
+  const tail = others > 0 ? `　｜　ほかに実行中 ${others} 件` : '';
+  if (!tab) return setStatus(running ? `実行中 ${running} 件` : '');
+  if (isRunning(tab)) return setStatus(`${tab.note || '実行中…'} ${elapsed(Date.now() - tab.startedAt)}${tail}`, 'running');
+  if (tab.info) {
+    const sec = (tab.info.durationMs / 1000).toFixed(1);
+    const sig = tab.info.signal ? `・シグナル ${tab.info.signal}` : '';
+    return setStatus(`終了コード ${tab.info.exitCode}（${sec} 秒${sig}）${tail}`, tab.state);
+  }
+  return setStatus(`${tab.note}${tail}`, tab.state === 'ng' ? 'ng' : '');
+}
+
+// 実行するたびに新しいタブを開く
 async function runCurrent() {
   const c = current();
-  if (!c || ui.run || !ui.lastPreviewOk) return;
-  refit();
-  const r = await board.start(c.id, valuesOf(c), term.cols, term.rows);
-  if (r.cancelled) return;
-  if (r.error) {
-    term.write(`\r\n\x1b[31m✖ ${r.error.replace(/\n/g, '\r\n  ')}\x1b[0m\r\n`);
-    setStatus('実行できませんでした', 'ng');
-    return;
-  }
-  const time = new Date(r.startedAt).toLocaleTimeString('ja-JP');
-  term.write(`\r\n\x1b[36m━━ ${time}  ${c.name}\x1b[0m\r\n\x1b[90m> ${r.display}\r\n  （作業フォルダ: ${r.cwd}）\x1b[0m\r\n`);
-  ui.run = { runId: r.runId, startedAt: r.startedAt };
-  const tick = () => {
-    const s = Math.floor((Date.now() - r.startedAt) / 1000);
-    setStatus(`実行中… ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, 'running');
-  };
-  tick();
-  ui.run.timer = setInterval(tick, 500);
-  updateRunButtons();
-  term.focus();
+  if (!c || !ui.lastPreviewOk) return;
+  const tab = createTab(c, valuesOf(c));
+  activateTab(tab);
+  const r = await startInTab(tab, c, valuesOf(c));
+  if (r.cancelled) removeTab(tab);
+}
+
+async function rerunActive() {
+  const tab = activeTab;
+  if (!tab || isRunning(tab)) return;
+  const c = ui.commands.find((x) => x.id === tab.cmdId);
+  if (!c) return;
+  await startInTab(tab, c, tab.values);
 }
 
 $('#run').addEventListener('click', runCurrent);
+$('#rerun').addEventListener('click', rerunActive);
 $('#stop').addEventListener('click', async () => {
-  if (!ui.run) return;
-  const r = await board.stop(ui.run.runId);
-  if (!ui.run) return;
-  clearInterval(ui.run.timer);
-  if (r === 'interrupt') setStatus('停止しています…（もう一度押すと強制終了）', 'running');
-  else if (r === 'force') setStatus('強制終了しています…', 'ng');
+  const tab = activeTab;
+  if (!isRunning(tab)) return;
+  const r = await board.stop(tab.runId);
+  if (!isRunning(tab)) return;
+  if (r === 'interrupt') tab.note = '停止しています…（もう一度押すと強制終了）';
+  else if (r === 'force') tab.note = '強制終了しています…';
+  renderStatus();
 });
-$('#clear').addEventListener('click', () => term.clear());
+$('#clear').addEventListener('click', () => activeTab && activeTab.term.clear());
+$('#close-done').addEventListener('click', closeFinishedTabs);
 $('#copy').addEventListener('click', () => {
   board.copy($('#preview').textContent);
   setStatus('コマンドラインをコピーしました');
@@ -406,6 +586,9 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'Enter') {
     e.preventDefault();
     runCurrent();
+  } else if (e.ctrlKey && e.key === 'Tab') {
+    e.preventDefault();
+    cycleTab(e.shiftKey ? -1 : 1);
   } else if (e.ctrlKey && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     $('#search').focus();
@@ -433,7 +616,7 @@ document.addEventListener('keydown', (e) => {
       () => {
         document.body.classList.remove('dragging');
         window.removeEventListener('mousemove', onMove);
-        refit();
+        refitActive();
       },
       { once: true }
     );
@@ -462,6 +645,6 @@ async function loadCommands() {
 
 board.onCommandsChanged(() => loadCommands());
 loadCommands().then(() => {
-  refit();
+  activateTab(null, false);
   $('#search').focus();
 });

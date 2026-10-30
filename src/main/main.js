@@ -10,7 +10,7 @@ const { planSpawn } = require('./runner');
 
 let win = null;
 let catalog = { commands: [], errors: [] };
-let current = null; // 実行中のプロセス { id, proc, startedAt }
+const runs = new Map(); // 実行中のプロセス runId → { id, proc, startedAt, cmdId }
 let runSeq = 0;
 
 // ---- 保存する状態（前回の入力値・設定） ----
@@ -91,6 +91,25 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // 実行中のコマンドがあれば、止めて閉じてよいか確かめる
+  let closingConfirmed = false;
+  win.on('close', (e) => {
+    if (closingConfirmed || runs.size === 0) return;
+    e.preventDefault();
+    const r = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      buttons: ['止めて終了する', 'キャンセル'],
+      defaultId: 1,
+      cancelId: 1,
+      message: `実行中のコマンドが ${runs.size} 件あります。`,
+      detail: '終了すると、実行中のコマンドはすべて強制終了します。',
+    });
+    if (r === 0) {
+      closingConfirmed = true;
+      killAll();
+      win.close();
+    }
+  });
   win.on('closed', () => {
     win = null;
   });
@@ -127,7 +146,6 @@ ipcMain.handle('values:save', (_e, id, values) => {
 });
 
 ipcMain.handle('run:start', async (_e, id, values, cols, rows) => {
-  if (current) return { error: '実行中のコマンドがあります。終わるか停止してから実行してください' };
   const c = findCommand(id);
   if (!c) return { error: 'コマンドが見つかりません' };
   const built = buildCommand(c, values);
@@ -164,7 +182,8 @@ ipcMain.handle('run:start', async (_e, id, values, cols, rows) => {
   }
   const runId = ++runSeq;
   const startedAt = Date.now();
-  current = { id: runId, proc, startedAt };
+  const run = { id: runId, proc, startedAt, cmdId: id };
+  runs.set(runId, run);
 
   // 細かい出力を少しまとめて送る（描画の負荷を下げる）
   let buf = '';
@@ -182,24 +201,23 @@ ipcMain.handle('run:start', async (_e, id, values, cols, rows) => {
   proc.onExit(({ exitCode, signal }) => {
     clearTimeout(flushTimer);
     flush();
-    if (current && current.id === runId) {
-      clearTimeout(current.stopTimer);
-      clearTimeout(current.lastResort);
-      current = null;
-    }
+    clearTimeout(run.stopTimer);
+    clearTimeout(run.lastResort);
+    runs.delete(runId);
     win?.webContents.send('run:exit', runId, { exitCode, signal, durationMs: Date.now() - startedAt });
   });
   return { runId, display: built.display, cwd: plan.cwd, startedAt };
 });
 
 ipcMain.on('run:input', (_e, runId, data) => {
-  if (current && current.id === runId) current.proc.write(data);
+  runs.get(runId)?.proc.write(data);
 });
 
-ipcMain.on('run:resize', (_e, cols, rows) => {
-  if (current && cols > 0 && rows > 0) {
+ipcMain.on('run:resize', (_e, runId, cols, rows) => {
+  const run = runs.get(runId);
+  if (run && cols > 0 && rows > 0) {
     try {
-      current.proc.resize(cols, rows);
+      run.proc.resize(cols, rows);
     } catch {
       /* 終了直後は失敗することがある */
     }
@@ -210,21 +228,27 @@ ipcMain.on('run:resize', (_e, cols, rows) => {
 // node-pty の kill() は Windows（ConPTY）で、子プロセス一覧を取りに行く補助プロセスが
 // 「AttachConsole failed」で落ちる（終了と競合する）ため、強制終了は taskkill /T でプロセスツリーごと行い、
 // kill() はそれでも終わらないときの最後の手段にする。
+function killTree(pid, sync = false) {
+  try {
+    if (process.platform === 'win32') {
+      const args = ['/T', '/F', '/PID', String(pid)];
+      if (sync) execFileSync('taskkill', args, { windowsHide: true, stdio: 'ignore' });
+      else execFile('taskkill', args, { windowsHide: true }, () => {});
+    } else {
+      process.kill(pid, 'SIGKILL');
+    }
+  } catch {
+    /* すでに終了 */
+  }
+}
+
 function forceKill(run) {
   if (!run || run.forced) return;
   run.forced = true;
   clearTimeout(run.stopTimer);
-  if (process.platform === 'win32') {
-    execFile('taskkill', ['/T', '/F', '/PID', String(run.proc.pid)], { windowsHide: true }, () => {});
-  } else {
-    try {
-      process.kill(run.proc.pid, 'SIGKILL');
-    } catch {
-      /* すでに終了 */
-    }
-  }
+  killTree(run.proc.pid);
   run.lastResort = setTimeout(() => {
-    if (current === run) {
+    if (runs.get(run.id) === run) {
       try {
         run.proc.kill();
       } catch {
@@ -234,11 +258,12 @@ function forceKill(run) {
   }, 3000);
 }
 
-ipcMain.handle('run:stop', (_e, runId) => {
-  const run = current;
-  if (!run || run.id !== runId) return null;
-  if (run.stopping) {
-    forceKill(run); // 2 回目は即座に強制終了
+// force: true なら Ctrl+C を飛ばしてすぐ強制終了（タブを閉じるときなど）
+ipcMain.handle('run:stop', (_e, runId, force = false) => {
+  const run = runs.get(runId);
+  if (!run) return null;
+  if (run.stopping || force) {
+    forceKill(run);
     return 'force';
   }
   run.stopping = true;
@@ -249,6 +274,18 @@ ipcMain.handle('run:stop', (_e, runId) => {
   }
   run.stopTimer = setTimeout(() => forceKill(run), 2000);
   return 'interrupt';
+});
+
+ipcMain.handle('dialog:confirm', async (_e, message, detail, okLabel = 'OK') => {
+  const r = await dialog.showMessageBox(win, {
+    type: 'question',
+    buttons: [okLabel, 'キャンセル'],
+    defaultId: 0,
+    cancelId: 1,
+    message,
+    detail: detail || undefined,
+  });
+  return r.response === 0;
 });
 
 ipcMain.handle('dialog:pick', async (_e, opts) => {
@@ -275,17 +312,12 @@ app.whenReady().then(() => {
   createWindow();
 });
 
+function killAll() {
+  for (const run of runs.values()) killTree(run.proc.pid, true);
+  runs.clear();
+}
+
 app.on('window-all-closed', () => {
-  if (current) {
-    try {
-      if (process.platform === 'win32') {
-        execFileSync('taskkill', ['/T', '/F', '/PID', String(current.proc.pid)], { windowsHide: true, stdio: 'ignore' });
-      } else {
-        process.kill(current.proc.pid, 'SIGKILL');
-      }
-    } catch {
-      /* すでに終了 */
-    }
-  }
+  killAll();
   app.quit();
 });

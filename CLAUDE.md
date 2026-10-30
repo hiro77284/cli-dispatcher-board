@@ -14,4 +14,5 @@ CLI コマンドの起動パターンを YAML で登録し、GUI でパラメー
 - 引数は文字列連結ではなく配列で組み立て、引用は `winquote.js` に集約する。Windows では node-pty に引数を 1 本のコマンドライン文字列で渡す（node-pty 自身の引用処理は使わない）。
 - 定義ファイルの仕様を変えたら `docs/command-format.md` とサンプル（`commands/`）も合わせて直し、`npm test` の「同梱のサンプル定義がすべて読み込める」を通す。
 - 実行の挙動（引用・cmd.exe 経由の判断など）を変えたら、テストを足してから直す。
+- 同時実行：main は `runs`（runId → プロセス）で、renderer は出力タブ（1 実行 = 1 タブ = 1 xterm、`byRun` で runId から引く）で管理する。入力・リサイズ・停止はすべて runId 単位。
 - 実行中のプロセスを止めるのに node-pty の `kill()` を最初に使わない。Windows（ConPTY）では補助プロセスが「AttachConsole failed」で落ちる。停止は Ctrl+C（`\x03` を書き込む）→ 2 秒後に `taskkill /T /F` の順で行い、`kill()` は最後の手段にする（`main.js` の `run:stop`）。
