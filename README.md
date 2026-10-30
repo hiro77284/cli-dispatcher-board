@@ -2,6 +2,10 @@
 
 CLI コマンドの起動パターンを登録しておき、GUI でパラメータを入力して実行するアプリです（Windows 11 向け、Electron 製）。
 
+パラメータの仕様を覚えていなくても、一覧から選んで入力欄を埋め、「▶ 実行」を押すだけで、コマンドラインを組み立てて実行し、出力をその場で表示します。
+
+![動作の様子（ping を実行）](docs/images/demo.gif)
+
 - 左の一覧からコマンドを選ぶと、説明とパラメータの入力欄が出ます
 - 入力すると、組み立てたコマンドラインがその場でプレビューされます（コピーもできます）
 - 「▶ 実行」（Ctrl+Enter）で実行し、出力をリアルタイムに表示します。進捗バーや色付きの出力もターミナルと同じように出ます
@@ -11,9 +15,11 @@ CLI コマンドの起動パターンを登録しておき、GUI でパラメー
 
 ## 準備
 
-Node.js（20 以上）が必要です。
+Windows 11 と Node.js（20 以上）が必要です。
 
 ```powershell
+git clone https://github.com/hiro77284/cli-dispatcher-board.git
+cd cli-dispatcher-board
 npm install
 npm start
 ```
@@ -74,3 +80,7 @@ npm test   # コマンド組み立て・引用処理のテスト
 - `src/renderer/` … 画面（xterm.js で出力を表示）
 
 環境変数 `CLI_BOARD_COMMANDS` に（`;` 区切りで）フォルダを指定すると、`commands/` の代わりにそこを読みます。
+
+## ライセンス
+
+[MIT](LICENSE)

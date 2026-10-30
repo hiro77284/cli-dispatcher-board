@@ -2,3 +2,6 @@ node_modules/
 out/
 dist/
 *.log
+
+# 録画の元動画（README 用の GIF は docs/images に置く）
+demos/
