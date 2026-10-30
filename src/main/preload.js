@@ -2,6 +2,7 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('board', {
+  version: () => ipcRenderer.invoke('app:version'),
   listCommands: () => ipcRenderer.invoke('commands:list'),
   reloadCommands: () => ipcRenderer.invoke('commands:reload'),
   preview: (id, values) => ipcRenderer.invoke('commands:preview', id, values),

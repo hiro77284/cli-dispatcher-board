@@ -644,6 +644,10 @@ async function loadCommands() {
 }
 
 board.onCommandsChanged(() => loadCommands());
+board.version().then((v) => {
+  document.title = `CLI ディスパッチャーボード v${v}`;
+  $('#version').textContent = `v${v}`;
+});
 loadCommands().then(() => {
   activateTab(null, false);
   $('#search').focus();

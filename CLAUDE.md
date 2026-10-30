@@ -16,3 +16,11 @@ CLI コマンドの起動パターンを YAML で登録し、GUI でパラメー
 - 実行の挙動（引用・cmd.exe 経由の判断など）を変えたら、テストを足してから直す。
 - 同時実行：main は `runs`（runId → プロセス）で、renderer は出力タブ（1 実行 = 1 タブ = 1 xterm、`byRun` で runId から引く）で管理する。入力・リサイズ・停止はすべて runId 単位。
 - 実行中のプロセスを止めるのに node-pty の `kill()` を最初に使わない。Windows（ConPTY）では補助プロセスが「AttachConsole failed」で落ちる。停止は Ctrl+C（`\x03` を書き込む）→ 2 秒後に `taskkill /T /F` の順で行い、`kill()` は最後の手段にする（`main.js` の `run:stop`）。
+
+## バージョンとリリース
+
+- セマンティック バージョニング。1.0.0 までは、互換性のない変更（定義ファイルの書き方が変わるなど）でマイナー、機能追加もマイナー、不具合の修正はパッチを上げる。
+- バージョンの原本は `package.json` の `version`（画面とウィンドウのタイトルはここから表示する）。
+- 変更をコミットするたびに、`CHANGELOG.md` の先頭の「未リリース」に追加・変更・修正を書いておく（無ければ `## [Unreleased]` を作る）。
+- リリースするときは、`npm version <patch|minor> --no-git-tag-version` で `package.json` と `package-lock.json` を上げ、`CHANGELOG.md` の「未リリース」をそのバージョンと日付に書き換えて末尾にリンクを足し、コミットしてから `git tag vX.Y.Z` → `git push --follow-tags` → `gh release create vX.Y.Z --notes-file <その版の変更点>` の順で行う。
+

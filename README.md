@@ -81,6 +81,10 @@ npm test   # コマンド組み立て・引用処理のテスト
 
 環境変数 `CLI_BOARD_COMMANDS` に（`;` 区切りで）フォルダを指定すると、`commands/` の代わりにそこを読みます。
 
+## 変更履歴
+
+[CHANGELOG.md](CHANGELOG.md) を参照してください。
+
 ## ライセンス
 
 [MIT](LICENSE)

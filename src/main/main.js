@@ -80,7 +80,7 @@ function createWindow() {
     height: 860,
     minWidth: 820,
     minHeight: 560,
-    title: 'CLI ディスパッチャーボード',
+    title: `CLI ディスパッチャーボード v${app.getVersion()}`,
     backgroundColor: '#1e1f22',
     autoHideMenuBar: true,
     webPreferences: {
@@ -120,6 +120,8 @@ function publicCommand(c) {
   const { args, env, ...rest } = c;
   return rest;
 }
+
+ipcMain.handle('app:version', () => app.getVersion());
 
 ipcMain.handle('commands:list', () => ({
   commands: catalog.commands.map(publicCommand),
