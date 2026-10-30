@@ -1,0 +1,136 @@
+# 開発・システム系のサンプル
+commands:
+  - id: git-log
+    name: Git の履歴を見る
+    category: 開発
+    description: リポジトリのコミット履歴をグラフ付きで表示します。
+    program: git
+    cwd: "{{repo}}"
+    params:
+      - name: repo
+        label: リポジトリのフォルダ
+        type: folder
+        required: true
+      - name: count
+        label: 件数
+        type: number
+        default: 30
+      - name: all
+        label: すべてのブランチ
+        type: flag
+      - name: author
+        label: 作者で絞り込み
+        description: 名前またはメールアドレスの一部
+    args:
+      - log
+      - --graph
+      - --oneline
+      - --decorate
+      - --color=always
+      - if: all
+        args: ["--all"]
+      - if: count
+        args: ["-n", "{{count}}"]
+      - "--author={{author}}"
+
+  - id: winget-search
+    name: アプリを探す（winget）
+    category: システム
+    description: winget のリポジトリからアプリを検索します。
+    program: winget
+    params:
+      - name: query
+        label: キーワード
+        required: true
+        default: python
+      - name: source
+        label: ソース
+        type: select
+        default: winget
+        options: [winget, msstore]
+    args:
+      - search
+      - "{{query}}"
+      - --source
+      - "{{source}}"
+
+  - id: winget-upgrade
+    name: アプリを一括更新（winget）
+    category: システム
+    description: |
+      更新できるアプリを一覧します。「すべて更新する」を有効にすると実際に更新します。
+    program: winget
+    confirm: winget でアプリを更新します。よろしいですか？
+    params:
+      - name: doall
+        label: すべて更新する
+        type: flag
+        description: --all。オフなら一覧表示だけです
+    args:
+      - upgrade
+      - if: doall
+        args: ["--all", "--accept-package-agreements", "--accept-source-agreements"]
+
+  - id: ffmpeg-convert
+    name: 動画を変換（ffmpeg）
+    category: メディア
+    description: |
+      ffmpeg で動画を H.264 / AAC の MP4 に変換します。変換中の進捗（frame= ... time= ...）がリアルタイムに表示されます。
+      ffmpeg が PATH に入っている必要があります（winget install Gyan.FFmpeg など）。
+    program: ffmpeg
+    params:
+      - name: input
+        label: 入力ファイル
+        type: file
+        required: true
+        filters:
+          - { name: 動画, extensions: [mp4, mov, mkv, avi, webm] }
+      - name: output
+        label: 出力ファイル
+        type: file
+        save: true
+        required: true
+        filters:
+          - { name: MP4, extensions: [mp4] }
+      - name: crf
+        label: 画質（CRF）
+        type: number
+        default: 23
+        min: 0
+        max: 51
+        description: 小さいほど高画質・大きいファイル。18〜28 が目安
+      - name: preset
+        label: 速度
+        type: select
+        default: veryfast
+        options: [ultrafast, veryfast, fast, medium, slow]
+      - name: scale
+        label: 横幅（px）
+        type: number
+        description: 指定すると縦横比を保って縮小します。空欄なら元のまま
+      - name: overwrite
+        label: 上書きする
+        type: flag
+      - name: extra
+        label: 追加オプション
+        split: true
+        placeholder: 例）-ss 00:01:00 -t 30
+        description: そのまま ffmpeg に渡す追加の引数（空白で区切り、"..." で囲める）
+    args:
+      - -hide_banner
+      - if: overwrite
+        args: ["-y"]
+      - -i
+      - "{{input}}"
+      - -c:v
+      - libx264
+      - -preset
+      - "{{preset}}"
+      - -crf
+      - "{{crf}}"
+      - if: scale
+        args: ["-vf", "scale={{scale}}:-2"]
+      - -c:a
+      - aac
+      - "{{extra}}"
+      - "{{output}}"

@@ -1,0 +1,20 @@
+{
+  "name": "cli-dispatcher-board",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLIコマンドの起動パターンを登録し、GUIでパラメータを入れて実行するアプリ",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "node-pty": "^1.1.0",
+    "yaml": "^2.9.1"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0"
+  }
+}

@@ -1,0 +1,100 @@
+# ファイル操作のサンプル
+commands:
+  - id: dir-search
+    name: ファイルを名前で探す（dir）
+    category: ファイル
+    description: |
+      フォルダ以下から、名前がパターンに合うファイルを探して一覧します。
+      cmd の組み込みコマンドなので shell: cmd で実行します。
+    program: dir
+    shell: cmd
+    params:
+      - name: folder
+        label: 探すフォルダ
+        type: folder
+        required: true
+      - name: pattern
+        label: パターン
+        default: "*.pdf"
+        description: ワイルドカード（* と ?）が使えます
+      - name: sort
+        label: 並べ替える
+        type: flag
+    args:
+      - /s
+      - /b
+      - "{{folder}}\\{{pattern}}"
+      - if: sort
+        args:
+          - raw: "| sort"
+
+  - id: robocopy
+    name: フォルダを複製（robocopy）
+    category: ファイル
+    description: |
+      フォルダの中身を別の場所へコピーします。「ミラー」を有効にすると、コピー元にないファイルはコピー先から削除されます。
+      まず「試すだけ」で何が起きるかを確かめてから実行してください。
+    program: robocopy
+    confirm: robocopy でファイルをコピーします。よろしいですか？
+    params:
+      - name: src
+        label: コピー元
+        type: folder
+        required: true
+      - name: dst
+        label: コピー先
+        type: folder
+        required: true
+      - name: mirror
+        label: ミラー（/MIR）
+        type: flag
+        description: コピー先をコピー元と完全に同じにします（余分なファイルは削除）
+      - name: dryrun
+        label: 試すだけ（/L）
+        type: flag
+        default: true
+        description: 実際にはコピーせず、対象を一覧するだけ
+      - name: threads
+        label: 並列数（/MT）
+        type: number
+        default: 8
+        min: 1
+        max: 128
+    args:
+      - "{{src}}"
+      - "{{dst}}"
+      - if: mirror
+        args: ["/MIR"]
+      - if: mirror
+        not: true
+        args: ["/E"]
+      - if: dryrun
+        args: ["/L"]
+      - "/MT:{{threads}}"
+      - /R:1
+      - /W:1
+
+  - id: big-files
+    name: 大きいファイルを探す（PowerShell）
+    category: ファイル
+    description: フォルダ以下のファイルを大きい順に並べ、上位を表示します。
+    program: Get-ChildItem
+    shell: powershell
+    params:
+      - name: folder
+        label: 探すフォルダ
+        type: folder
+        required: true
+      - name: top
+        label: 表示件数
+        type: number
+        default: 20
+        required: true
+    args:
+      - -Path
+      - "{{folder}}"
+      - -Recurse
+      - -File
+      - -ErrorAction
+      - SilentlyContinue
+      - raw: "| Sort-Object Length -Descending | Select-Object -First {{top}} @{n='MB';e={[math]::Round($_.Length/1MB,1)}}, FullName | Format-Table -AutoSize"

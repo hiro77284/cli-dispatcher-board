@@ -1,0 +1,103 @@
+# ネットワーク系のサンプル
+commands:
+  - id: ping
+    name: Ping 疎通確認
+    category: ネットワーク
+    description: |
+      指定したホストに ICMP エコー要求を送り、応答があるかと応答時間を調べます。
+      「止めるまで続ける」を有効にすると、停止ボタンを押すまで送り続けます。
+    program: ping
+    params:
+      - name: host
+        label: ホスト名 / IP アドレス
+        required: true
+        default: 8.8.8.8
+        description: 宛先。例）google.com、192.168.1.1
+      - name: count
+        label: 回数
+        type: number
+        default: 4
+        min: 1
+        description: 送信する回数（-n）
+      - name: forever
+        label: 止めるまで続ける
+        type: flag
+        description: -t。指定すると「回数」は無視されます
+      - name: ipv
+        label: IP バージョン
+        type: select
+        default: ""
+        options:
+          - { value: "", label: 自動 }
+          - { value: "-4", label: IPv4 のみ }
+          - { value: "-6", label: IPv6 のみ }
+    args:
+      - "{{ipv}}"
+      - if: forever
+        args: ["-t"]
+      - if: forever
+        not: true
+        args:
+          - if: count
+            args: ["-n", "{{count}}"]
+      - "{{host}}"
+
+  - id: tracert
+    name: 経路の追跡（tracert）
+    category: ネットワーク
+    description: 宛先までに経由するルーターを順に表示します。結果が出るまで時間がかかります。
+    program: tracert
+    params:
+      - name: host
+        label: ホスト名 / IP アドレス
+        required: true
+        default: example.com
+      - name: nodns
+        label: 名前解決しない
+        type: flag
+        default: true
+        description: -d。IP アドレスのまま表示し、速く終わります
+      - name: hops
+        label: 最大ホップ数
+        type: number
+        default: 30
+    args:
+      - if: nodns
+        args: ["-d"]
+      - if: hops
+        args: ["-h", "{{hops}}"]
+      - "{{host}}"
+
+  - id: curl-download
+    name: ファイルをダウンロード（curl）
+    category: ネットワーク
+    description: |
+      URL のファイルを保存します。進捗バーがリアルタイムに更新されます。
+      Windows 11 には curl.exe が最初から入っています。
+    program: curl.exe
+    params:
+      - name: url
+        label: URL
+        required: true
+        default: https://proof.ovh.net/files/100Mb.dat
+        description: 既定値は回線速度テスト用の 100MB のファイルです
+      - name: output
+        label: 保存先
+        type: file
+        save: true
+        required: true
+      - name: progress
+        label: 表示方法
+        type: select
+        default: bar
+        options:
+          - { value: bar, label: 進捗バー（#####） }
+          - { value: meter, label: 詳細メーター }
+    args:
+      - -L
+      - if: progress
+        equals: bar
+        args: ["--progress-bar"]
+      - -o
+      - "{{output}}"
+      - "{{url}}"
